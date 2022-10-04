@@ -2,9 +2,9 @@ name: "CI"
 
 on:
   push:
-    branches: [ "master", "more-aggressive-dirty-module-checking" ]
+    branches: [ "master", "more-aggressive-dirty-module-checking", "FredTheDino-poke" ]
   pull_request:
-    branches: [ "master", "more-aggressive-dirty-module-checking" ]
+    branches: [ "master", "more-aggressive-dirty-module-checking", "FredTheDino-poke" ]
   release:
     types: [ "published" ]
 
