@@ -138,6 +138,27 @@ spec = do
       writeFileWithTimestamp moduleAPath timestampD moduleAContent2
       compile modulePaths `shouldReturn` moduleNames ["A", "B"]
 
+    it "asdf only recompiles direct dependents even if they don't import the constructors [future optimization]" $ do
+      -- NOTE[drathier]: while constructors can still be exported in spirit via a Generic instance, all type class instances live next to the data type or the type class definition, and we don't inline it, so it will have been updated already
+      let moduleAPath = sourcesDir </> "A.purs"
+          moduleBPath = sourcesDir </> "B.purs"
+          moduleCPath = sourcesDir </> "C.purs"
+          modulePaths = [moduleAPath, moduleBPath, moduleCPath]
+          moduleAContent1 = "module A where\ndata Foo = Foo | Foo20\n"
+          moduleAContent2 = "module A where\ndata Foo = Foo | Foo21\n"
+          moduleBContent = "module B where\nimport A (Foo(..))\nbar = Foo\n"
+          moduleCContent = "module C where\nimport A (Foo)\nbaz :: Foo -> Foo\nbaz a = a\n"
+
+      writeFileWithTimestamp moduleAPath timestampA moduleAContent1
+      writeFileWithTimestamp moduleBPath timestampB moduleBContent
+      writeFileWithTimestamp moduleCPath timestampC moduleCContent
+      compile modulePaths `shouldReturn` moduleNames ["A", "B", "C"]
+
+      writeFileWithTimestamp moduleAPath timestampD moduleAContent2
+      -- [drathier]: future optimization; look at what we're actually using
+      -- compile modulePaths `shouldReturn` moduleNames ["A", "B"]
+      compile modulePaths `shouldReturn` moduleNames ["A", "B", "C"]
+
     it "asdf does not recompile anything when no source files changed" $ do
       let moduleAPath = sourcesDir </> "A.purs"
           moduleBPath = sourcesDir </> "B.purs"
@@ -257,7 +278,6 @@ spec = do
       -- no changes when rebuilding
       compile modulePaths `shouldReturn` moduleNames []
 
-    -- More complicated caching rules
     it "asdf transitively tracks the underlying type class instance implementations of type classes; instance in same module as data type definition" $ do
       -- first, type class without type arguments
       let moduleAPath = sourcesDir </> "A.purs"
@@ -293,6 +313,69 @@ spec = do
       -- [drathier]: I thought we'd have to recompile D too, but since it references the type class instance as a top-level function in that other module, we don't have to recompile D
       -- compile modulePaths `shouldReturn` moduleNames ["B", "D"]
       compile modulePaths `shouldReturn` moduleNames ["B"]
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+
+    it "asdf changing an unexported declaration doesn't trigger downstream recompiles" $ do
+      -- first, type class without type arguments
+      let moduleAPath = sourcesDir </> "A.purs"
+          moduleBPath = sourcesDir </> "B.purs"
+          modulePaths = [moduleAPath, moduleBPath]
+          -- diamond shape
+          moduleAContent1 = "module A where\nthingy = 1\n"
+          moduleAContent2 = "module A where\nthingy = 2\n"
+          moduleBContent = "module B where\nimport A\nasdf = thingy\n"
+
+      writeFileWithTimestamp moduleAPath timestampA moduleAContent1
+      writeFileWithTimestamp moduleBPath timestampB moduleBContent
+      compile modulePaths `shouldReturn` moduleNames ["A", "B"]
+
+      writeFileWithTimestamp moduleAPath timestampD moduleAContent2
+      compile modulePaths `shouldReturn` moduleNames ["A"]
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+
+    it "asdf adding a new declaration doesn't have to trigger downstream recompiles [future optimization]" $ do
+      -- first, type class without type arguments
+      let moduleAPath = sourcesDir </> "A.purs"
+          moduleBPath = sourcesDir </> "B.purs"
+          modulePaths = [moduleAPath, moduleBPath]
+          -- diamond shape
+          moduleAContent1 = "module A where\nthingy = 1\n"
+          moduleAContent2 = "module A where\nthingy = 2\nqwer = 234\n"
+          moduleBContent = "module B where\nimport A\nasdf = thingy\n"
+
+      writeFileWithTimestamp moduleAPath timestampA moduleAContent1
+      writeFileWithTimestamp moduleBPath timestampB moduleBContent
+      compile modulePaths `shouldReturn` moduleNames ["A", "B"]
+
+      writeFileWithTimestamp moduleAPath timestampD moduleAContent2
+      -- [drathier]: future optimization; look at what we're actually using
+      -- compile modulePaths `shouldReturn` moduleNames ["A"]
+      compile modulePaths `shouldReturn` moduleNames ["A", "B"]
+
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+
+    it "asdf adding a new data declaration doesn't have to trigger downstream recompiles [future optimization]" $ do
+      -- first, type class without type arguments
+      let moduleAPath = sourcesDir </> "A.purs"
+          moduleBPath = sourcesDir </> "B.purs"
+          modulePaths = [moduleAPath, moduleBPath]
+          -- diamond shape
+          moduleAContent1 = "module A where\nthingy = 1\n"
+          moduleAContent2 = "module A where\nthingy = 2\ndata MyType = MyTypeCtor\n"
+          moduleBContent = "module B where\nimport A (thingy)\nasdf = thingy\n"
+
+      writeFileWithTimestamp moduleAPath timestampA moduleAContent1
+      writeFileWithTimestamp moduleBPath timestampB moduleBContent
+      compile modulePaths `shouldReturn` moduleNames ["A", "B"]
+
+      writeFileWithTimestamp moduleAPath timestampD moduleAContent2
+      -- [drathier]: future optimization; look at what we're actually using
+      -- compile modulePaths `shouldReturn` moduleNames ["A"]
+      compile modulePaths `shouldReturn` moduleNames ["A", "B"]
+
       -- no changes when rebuilding
       compile modulePaths `shouldReturn` moduleNames []
 
