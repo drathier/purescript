@@ -47,7 +47,7 @@ import Test.Hspec
 -- updating.
 --
 updateSupportCode :: IO ()
-updateSupportCode = withCurrentDirectory "tests/support" $ do
+updateSupportCode = withCurrentDirectory "/Users/drathier/drathier/purescript/tests/support" $ do
   let lastUpdatedFile = ".last_updated"
   skipUpdate <- fmap isJust . runMaybeT $ do
     -- We skip the update if: `.last_updated` exists,
