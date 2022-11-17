@@ -152,7 +152,7 @@ importPrim =
       . addDefaultImport (Qualified ByNullSourcePos primModName)
 
 data NameSource = UserNamed | CompilerNamed
-  deriving (Show, Generic, NFData, Serialise)
+  deriving (Show, Generic, NFData, Serialise, Ord, Eq)
 
 -- |
 -- An item in a list of explicit imports or exports
@@ -432,10 +432,10 @@ data Declaration
   deriving (Show)
 
 data ValueFixity = ValueFixity Fixity (Qualified (Either Ident (ProperName 'ConstructorName))) (OpName 'ValueOpName)
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, Serialise)
 
 data TypeFixity = TypeFixity Fixity (Qualified (ProperName 'TypeName)) (OpName 'TypeOpName)
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, Serialise)
 
 pattern ValueFixityDeclaration :: SourceAnn -> Fixity -> Qualified (Either Ident (ProperName 'ConstructorName)) -> OpName 'ValueOpName -> Declaration
 pattern ValueFixityDeclaration sa fixity name op = FixityDeclaration sa (Left (ValueFixity fixity name op))

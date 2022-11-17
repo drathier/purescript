@@ -38,13 +38,13 @@ install: ## Install the executables to stack's path
 	$(stack) install
 
 ghci: ## Open GHCi with the PureScript library
-	$(stack) ghci $(package):lib
+	$(stack) ghci $(package):lib $(package):test:tests
 
 test: ## Run the tests.
 	$(stack) test --fast $(package)
 
 test-ghci: ## Open GHCi with the test suite loaded.
-	$(stack) ghci $(package):test:$(package)-tests
+	$(stack) ghci $(package):test:tests
 
 # If you want to profile a particular test, such
 # as LargeSumType.purs, add -p to the test arguments like so:
