@@ -38,7 +38,7 @@ install: ## Install the executables to stack's path
 	$(stack) install
 
 ghci: ## Open GHCi with the PureScript library
-	$(stack) ghci $(package):lib
+	$(stack) ghci $(package):lib $(package):test:tests
 
 test: ## Run the tests.
 	$(stack) test --fast $(package)
