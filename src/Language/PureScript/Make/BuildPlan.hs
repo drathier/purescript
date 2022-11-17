@@ -40,10 +40,11 @@ import           Language.PureScript.Errors
 import           Language.PureScript.Externs
 import           Language.PureScript.Make.Actions as Actions
 import           Language.PureScript.Make.Cache
-import           Language.PureScript.Names (ModuleName(..))
+import           Language.PureScript.Names (ModuleName(..), runModuleName)
 import           Language.PureScript.Sugar.Names.Env
 import           System.Directory (getCurrentDirectory)
 import Data.Function
+import Debug.Trace
 
 -- for debug prints, timestamps
 -- import Debug.Trace
@@ -109,8 +110,75 @@ fastEqBuildCache cache externsCache =
     toCmp (BuildCacheFile bcVersion bcModuleName bcCacheBlob bcCacheDecls bcDeclarations bcDeclShapes _bcCacheDeps bcCacheShapes) =
       -- don't compare imports; it will result in two layers being rebuilt instead of one
       BuildCacheFile bcVersion bcModuleName bcCacheBlob bcCacheDecls bcDeclarations bcDeclShapes mempty bcCacheShapes
+
   in
-  Serialise.serialise (toCmp cache) == Serialise.serialise (toCmp externsCache)
+  case Serialise.serialise (toCmp cache) == Serialise.serialise (toCmp externsCache) of
+    True -> -- True
+      let
+        why =
+          let
+              BuildCacheFile c_bcVersion
+                             c_bcModuleName
+                             c_bcCacheBlob
+                             c_bcCacheDecls
+                             c_bcDeclarations
+                             c_bcDeclShapes
+                             c_bcCacheDeps
+                             c_bcCacheShapes = cache
+          in
+            "hit:"
+              <> show (runModuleName c_bcModuleName)
+      in
+      trace (why) True
+    False ->
+      let
+        why =
+          let
+              BuildCacheFile c_bcVersion
+                             c_bcModuleName
+                             c_bcCacheBlob
+                             c_bcCacheDecls
+                             c_bcDeclarations
+                             c_bcDeclShapes
+                             c_bcCacheDeps
+                             c_bcCacheShapes = cache
+              BuildCacheFile ec_bcVersion
+                             ec_bcModuleName
+                             ec_bcCacheBlob
+                             ec_bcCacheDecls
+                             ec_bcDeclarations
+                             ec_bcDeclShapes
+                             ec_bcCacheDeps
+                             ec_bcCacheShapes  = externsCache
+              s label a b =
+                "(" <> label <> ":" <> (if a == b then "same" else "diff") <> ")"
+              d label a b =
+                if a == b then "" else "(" <> label <> ":\nnew cache:\n" <> show a <> "\n\nold cache:\n" <> show b <> "\n" <> ")\n\n"
+            in
+            "miss:"
+              <> show (runModuleName c_bcModuleName)
+              <> s "bcVersion" c_bcVersion ec_bcVersion
+              <> s "bcModuleName" c_bcModuleName ec_bcModuleName
+              <> s "bcCacheBlob" c_bcCacheBlob ec_bcCacheBlob
+              <> s "bcCacheDecls" c_bcCacheDecls ec_bcCacheDecls
+              <> s "bcDeclarations" c_bcDeclarations ec_bcDeclarations
+              <> s "bcDeclShapes" c_bcDeclShapes ec_bcDeclShapes
+              <> s "bcCacheDeps" c_bcCacheDeps ec_bcCacheDeps
+              <> s "bcCacheShapes" c_bcCacheShapes ec_bcCacheShapes
+              <> "\n\n\ndetails:\n"
+              <> d "bcVersion" c_bcVersion ec_bcVersion
+              <> d "bcModuleName" c_bcModuleName ec_bcModuleName
+              <> d "bcCacheBlob" c_bcCacheBlob ec_bcCacheBlob
+              <> d "bcCacheDecls" c_bcCacheDecls ec_bcCacheDecls
+              <> d "bcDeclarations" c_bcDeclarations ec_bcDeclarations
+              <> d "bcDeclShapes" c_bcDeclShapes ec_bcDeclShapes
+              <> d "bcCacheDeps" c_bcCacheDeps ec_bcCacheDeps
+              <> d "bcCacheShapes" c_bcCacheShapes ec_bcCacheShapes
+      in
+      trace (why) False
+      -- tell us why
+
+
 
 buildJobSuccess :: BuildJobResult -> Maybe (MultipleErrors, ExternsFile, DidPublicApiChange)
 buildJobSuccess (BuildJobSucceeded warnings externs wasRebuildNeeded) = Just (warnings, externs, wasRebuildNeeded)

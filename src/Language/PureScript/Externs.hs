@@ -49,7 +49,7 @@ import Paths_purescript as Paths
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.UTF8 as BLU
 
-import Control.Monad.State.Lazy (State, runState, modify)
+import Control.Monad.State.Lazy (State, runState, modify, get, put)
 import Debug.Trace
 import PrettyPrint
 
@@ -445,6 +445,11 @@ insertUnique k v m =
 -- data Shapes =
 --   Shapes
 type Shapes =
+  -- TODO[drathier]: here's the plan:
+  -- stage 1. exposing the things (does anyone depending on us have to recompile?)
+  -- stage 2. tracking which upstream things changed
+
+  -- Shapes = Map TheThing (Map ModuleRef (Map CacheDeclRef CacheDeclRefShape))
     (M.Map DeclarationCacheRef CacheShape)
   -- { typeAliases :: M.Map (ProperName 'TypeName) CacheShape
   -- , dataTypes :: M.Map (ProperName 'TypeName) CacheShape
@@ -480,6 +485,7 @@ moduleToShapes depShapes (Module ss _ mn ds (Just exps)) env renamedIdents =
 
     f :: Shapes -> Declaration -> State CacheTypeState Shapes
     f acc d =
+      -- Shapes = Map TheThing (Map ModuleRef [CacheDeclRef] to all deps)
       case d of
         (DataDeclaration z dataOrNewtype typeName targs ctors) -> do
           let
@@ -490,6 +496,7 @@ moduleToShapes depShapes (Module ss _ mn ds (Just exps)) env renamedIdents =
           targsv <- mapM (mapM (mapM typeToCacheTypeImpl)) targs
           ctorsv <- mapM handleCtor ctors
 
+          cts <- get
           pure
             (-- acc {dataTypes =
               insertUnique
@@ -504,6 +511,7 @@ moduleToShapes depShapes (Module ss _ mn ds (Just exps)) env renamedIdents =
                   typeName
                   targsv
                   ctorsv
+                -- , cts
                 )
                 acc -- (dataTypes acc)
               -- }
@@ -598,10 +606,10 @@ moduleToShapes depShapes (Module ss _ mn ds (Just exps)) env renamedIdents =
         _ -> pure acc
 
     --
-    _ = foldM f emptyShapes ds
+    res = runState (foldM f emptyShapes ds) mempty
   in
-
-  ()
+  trace ("externs2" <> show res)
+  () moduleToShapes is never called
   -- basic high-level plan:
   -- build a map/record of all shapes this module could export; laziness helps here
   --
@@ -725,7 +733,7 @@ moduleToExternsFile externsMap (Module ss _ mn ds (Just exps)) env renamedIdents
     bcDeclShapesWithTransitiveInternalShapes
     -- add in re-exports
     <> bcReExportDeclShapes
-    & (\v -> trace ("bcDeclShapes:" <> sShow (mn, exps, v)) v)
+    -- & (\v -> trace ("bcDeclShapes:" <> sShow (mn, exps, v)) v)
 
   bcDeclShapesWithTransitiveInternalShapes :: M.Map (ProperName 'TypeName) (CacheShape, CacheTypeDetails)
   bcDeclShapesWithTransitiveInternalShapes =
@@ -746,34 +754,7 @@ moduleToExternsFile externsMap (Module ss _ mn ds (Just exps)) env renamedIdents
     & M.fromList
     & M.map (\(cs, cts) ->
       ( cs
-      , cts
-        & M.mapWithKey (\k () ->
-          case k of
-            Qualified (BySourcePos _) _ ->
-              internalError "dsCacheShapesWithDetails: unexpected Qualified BySourcePos"
-
-            Qualified (ByModuleName km@(ModuleName kmn)) tn | "Prim" `T.isPrefixOf` kmn -> (PrimType km tn, CacheTypeDetails mempty)
-            Qualified (ByModuleName km) tn | "$" `T.isInfixOf` runProperName tn -> (TypeClassDictType km tn, CacheTypeDetails mempty)
-            Qualified (ByModuleName km) tn | km == mn -> (OwnModuleRef km tn, CacheTypeDetails mempty)
-            Qualified (ByModuleName km) tn ->
-              let
-                moduExterns =
-                  M.lookup km externsMap
-                    & fromMaybe (trace ("dsCacheShapesWithDetails: missing module in externsMap:" <> sShow (km, tn, M.keys externsMap)) $ internalError "dsCacheShapesWithDetails: missing module in externsMap")
-                    & _efBuildCache
-                    & _bcDeclShapes
-              in
-              moduExterns
-                & M.lookup tn
-                & fromMaybe (trace ("dsCacheShapesWithDetails: missing type in externsMap:" <> sShow (mn, km, tn, M.keys externsMap, moduExterns)) $ internalError "dsCacheShapesWithDetails: missing type in externsMap")
-        )
-        & M.toList
-        & mapMaybe (\case
-          (Qualified (ByModuleName km) k, v) -> Just ((km,k), v)
-          (Qualified (BySourcePos pos) k, v) -> trace (show ("BcDeclShapesAll-Externs: skipping Qualified BySourcePos" :: String, pos, "k" :: String, k, "v" :: String, v)) Nothing
-          ) -- TODO partial
-        & M.fromList
-        & CacheTypeDetails
+      , toCacheDetails cts externsMap mn
       )
     )
 
@@ -909,6 +890,37 @@ moduleToExternsFile externsMap (Module ss _ mn ds (Just exps)) env renamedIdents
 
   lookupRenamedIdent :: Ident -> Ident
   lookupRenamedIdent = flip (join M.findWithDefault) renamedIdents
+
+toCacheDetails cts externsMap mn =
+  cts
+  & M.mapWithKey (\k () ->
+    case k of
+      Qualified (BySourcePos _) _ ->
+        internalError "dsCacheShapesWithDetails: unexpected Qualified BySourcePos"
+
+      Qualified (ByModuleName km@(ModuleName kmn)) tn | "Prim" `T.isPrefixOf` kmn -> (PrimType km tn, CacheTypeDetails mempty)
+      Qualified (ByModuleName km) tn | "$" `T.isInfixOf` runProperName tn -> (TypeClassDictType km tn, CacheTypeDetails mempty)
+      Qualified (ByModuleName km) tn | km == mn -> (OwnModuleRef km tn, CacheTypeDetails mempty)
+      Qualified (ByModuleName km) tn ->
+        let
+          moduExterns =
+            M.lookup km externsMap
+              & fromMaybe (trace ("dsCacheShapesWithDetails: missing module in externsMap:" <> sShow (km, tn, M.keys externsMap)) $ internalError "dsCacheShapesWithDetails: missing module in externsMap")
+              & _efBuildCache
+              & _bcDeclShapes
+        in
+        moduExterns
+          & M.lookup tn
+          & fromMaybe (trace ("dsCacheShapesWithDetails: missing type in externsMap:" <> sShow (mn, km, tn, M.keys externsMap, moduExterns)) $ internalError "dsCacheShapesWithDetails: missing type in externsMap")
+  )
+  & M.toList
+  & mapMaybe (\case
+    (Qualified (ByModuleName km) k, v) -> Just ((km,k), v)
+    (Qualified (BySourcePos pos) k, v) -> trace (show ("BcDeclShapesAll-Externs: skipping Qualified BySourcePos" :: String, pos, "k" :: String, k, "v" :: String, v)) Nothing
+    ) -- TODO partial
+  & M.fromList
+  & CacheTypeDetails
+
 
 declToCacheShapeImpl
   :: Declaration
