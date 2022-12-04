@@ -163,9 +163,9 @@ prettyPrintRowDiffWith tro open close labels =
       format prefix ty = text ("," ++ prefix ++ T.unpack (prettyPrintLabel name) ++ " " ++ doubleColon ++ " ") <> typeAsBox' ty
     in
       vcat left $
-        catMaybes $
-        [ fmap (format "  ") maybeTy1 
-        , fmap (format "    ") maybeTy2
+        [ fromMaybe (text "<no row>") $ fmap (format " ") maybeTy1
+        , fromMaybe (text "<no row>") $ fmap (format " ") maybeTy2
+        , text ""
         ]
       
 
