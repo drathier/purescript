@@ -152,22 +152,22 @@ prettyPrintRowDiffWith tro open close labels =
     [] -> text [ open, close ]
     _ ->
       vcat left $
-        zipWith (\(name, ty1, ty2) i -> nameAndTypeToPs (if i == 0 then open else ',') name ty1 ty2) labels [0 :: Int ..] ++
-        catMaybes [ rowDiff, pure $ text [close] ]
+        [ text [ open ] ]
+        ++ fmap (\(name, ty1, ty2) -> nameAndTypeToPs name ty1 ty2) labels
+        ++ catMaybes [ rowDiff, pure $ text [close] ]
 
   where
-  nameAndTypeToPs :: Char -> Label -> Maybe PrettyPrintType -> Maybe PrettyPrintType -> Box
-  nameAndTypeToPs start name maybeTy1 maybeTy2 =
-    vcat left $
-      [ case maybeTy1 of
-          Just ty -> text (start : ' ' : T.unpack (prettyPrintLabel name) ++ " " ++ doubleColon ++ " ") <> typeAsBox' ty
-          Nothing -> text ("-- NO LABEL")
-      , case maybeTy2 of
-          Just ty -> text (' ' : start : ' ' : T.unpack (prettyPrintLabel name) ++ " " ++ doubleColon ++ " ") <> typeAsBox' ty
-          Nothing -> text (" -- NO LABEL")
-      , text ""
-      ]
-    
+  nameAndTypeToPs :: Label -> Maybe PrettyPrintType -> Maybe PrettyPrintType -> Box
+  nameAndTypeToPs name maybeTy1 maybeTy2 =
+    let
+      format prefix ty = text ("," ++ prefix ++ T.unpack (prettyPrintLabel name) ++ " " ++ doubleColon ++ " ") <> typeAsBox' ty
+    in
+      vcat left $
+        catMaybes $
+        [ fmap (format "  ") maybeTy1 
+        , fmap (format "    ") maybeTy2
+        ]
+      
 
   doubleColon = if troUnicode tro then "∷" else "::"
 
