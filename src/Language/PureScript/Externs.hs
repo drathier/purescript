@@ -1,5 +1,5 @@
 {-# LANGUAGE FunctionalDependencies #-}
--- |
+-- -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
 -- foreign import declarations.
 --
@@ -61,18 +61,7 @@ import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString as BS
 import qualified Crypto.Hash as Hash
 import qualified Data.ByteArray.Encoding as BAE
-
-newtype SerializationFormat a = SerializationFormat a
-  deriving (Show, Eq, Generic)
-
-instance Binary a => Binary (SerializationFormat a)
-instance Monoid a => Monoid (SerializationFormat a) where
-  mempty = SerializationFormat mempty
-instance Semigroup a => Semigroup (SerializationFormat a) where
-  SerializationFormat a <> SerializationFormat b = SerializationFormat (a <> b)
-
-toSerialized :: a -> SerializationFormat a
-toSerialized a = SerializationFormat a
+import Control.DeepSeq (NFData)
 
 -- | The data which will be serialized to an externs file
 data ExternsFile = ExternsFile
@@ -101,6 +90,7 @@ data ExternsFile = ExternsFile
   -- ^ Shapes of things in this module
   } deriving (Show, Generic)
 
+instance NFData ExternsFile
 instance Binary ExternsFile
 
 instance Eq ExternsFile where
@@ -117,6 +107,7 @@ data ExternsImport = ExternsImport
   , eiImportedAs :: Maybe ModuleName
   } deriving (Show, Generic)
 
+instance NFData ExternsImport
 instance Binary ExternsImport
 
 -- | A fixity declaration in an externs file
@@ -132,6 +123,7 @@ data ExternsFixity = ExternsFixity
   , efAlias :: Qualified (Either Ident (ProperName 'ConstructorName))
   } deriving (Show, Generic)
 
+instance NFData ExternsFixity
 instance Binary ExternsFixity
 
 -- | A type fixity declaration in an externs file
@@ -147,6 +139,7 @@ data ExternsTypeFixity = ExternsTypeFixity
   , efTypeAlias :: Qualified (ProperName 'TypeName)
   } deriving (Show, Generic)
 
+instance NFData ExternsTypeFixity
 instance Binary ExternsTypeFixity
 
 -- | A type or value declaration appearing in an externs file
@@ -200,6 +193,7 @@ data ExternsDeclaration =
       }
   deriving (Show, Generic)
 
+instance NFData ExternsDeclaration
 instance Binary ExternsDeclaration
 
 -- | Check whether the version in an externs file matches the currently running
@@ -251,15 +245,17 @@ data CSDataDeclarationTypeOnly =
     }
   deriving (Show, Generic, Eq)
 
--- Only value-level details. Only needed when ctors are used. Not useful without its corresponding CSDataDeclarationTypeOnly.
+
+-- Only vainstance NFData   derivinglue-level details. Only needed when ctors are used. Not useful without its corresponding CSDataDeclarationTypeOnly.
 data CSDataConstructorDeclaration
   = CSDataConstructorDeclaration
     { csDataCtorName :: !(ProperName 'ConstructorName)
     , csDataCtorFields :: ![(Ident, Type ())]
     }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Generic, Eq)
 
--- Both type-level and value-level details together, for when ctors are in use.
+
+-- Both tyinstance NFData   derivingpe-level and value-level details together, for when ctors are in use.
 data CSDataDeclarationWithCtors =
   CSDataDeclarationWithCtors
     { csDataDeclTypeOnly ::  CSDataDeclarationTypeOnly
@@ -267,6 +263,9 @@ data CSDataDeclarationWithCtors =
     }
   deriving (Show, Generic, Eq)
 
+instance NFData CSDataDeclarationTypeOnly
+instance NFData CSDataConstructorDeclaration
+instance NFData CSDataDeclarationWithCtors
 instance Binary CSDataDeclarationTypeOnly
 instance Binary CSDataConstructorDeclaration
 instance Binary CSDataDeclarationWithCtors
@@ -277,6 +276,7 @@ instance Binary CSDataDeclarationWithCtors
 data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ()) ToCSDB (Maybe CSKindDeclaration)
   deriving (Show, Generic, Eq)
 
+instance NFData CSTypeSynonymDeclaration
 instance Binary CSTypeSynonymDeclaration
   -- |
   -- A kind signature declaration
@@ -284,6 +284,7 @@ instance Binary CSTypeSynonymDeclaration
 data CSKindDeclaration = CSKindDeclaration (Type ())
   deriving (Show, Generic, Eq)
 
+instance NFData CSKindDeclaration
 instance Binary CSKindDeclaration
   -- |
   -- A role declaration (name, roles)
@@ -291,6 +292,7 @@ instance Binary CSKindDeclaration
 data CSRoleDeclaration = CSRoleDeclaration [Role]
   deriving (Show, Generic, Eq)
 
+instance NFData CSRoleDeclaration
 instance Binary CSRoleDeclaration
   -- |
   -- A value declaration (name, top-level binders, optional guard, value)
@@ -298,6 +300,7 @@ instance Binary CSRoleDeclaration
 data CSValueDeclaration = CSValueDeclaration NameKind Int (Type ()) ToCSDB
   deriving (Show, Generic, Eq)
 
+instance NFData CSValueDeclaration
 instance Binary CSValueDeclaration
 
   -- |
@@ -306,6 +309,7 @@ instance Binary CSValueDeclaration
 data CSExternDeclaration = CSExternDeclaration ToCSDB
   deriving (Show, Generic, Eq)
 
+instance NFData CSExternDeclaration
 instance Binary CSExternDeclaration
   -- |
   -- A data type foreign import (name, kind)
@@ -313,6 +317,7 @@ instance Binary CSExternDeclaration
 data CSExternDataDeclaration = CSExternDataDeclaration ToCSDB
   deriving (Show, Generic, Eq)
 
+instance NFData CSExternDataDeclaration
 instance Binary CSExternDataDeclaration
   -- |
   -- A fixity declaration
@@ -320,14 +325,17 @@ instance Binary CSExternDataDeclaration
 data CSOpFixity = CSOpFixity Fixity (Qualified Ident)
   deriving (Show, Generic, Eq)
 
+instance NFData CSOpFixity
 instance Binary CSOpFixity
 data CSCtorFixity = CSCtorFixity Fixity (Qualified (ProperName 'ConstructorName))
   deriving (Show, Generic, Eq)
 
+instance NFData CSCtorFixity
 instance Binary CSCtorFixity
 data CSTyOpFixity = CSTyOpFixity Fixity (Qualified (ProperName 'TypeName))
   deriving (Show, Generic, Eq)
 
+instance NFData CSTyOpFixity
 instance Binary CSTyOpFixity
   -- |
   -- A type class declaration (name, argument, implies, member declarations)
@@ -335,11 +343,13 @@ instance Binary CSTyOpFixity
 data CSTypeClassDeclaration = CSTypeClassDeclaration [(Text, Maybe (Type ()))] ([Constraint ()], ToCSDB) [FunctionalDependency] [CSTypeDeclaration]
   deriving (Show, Generic, Eq)
 
+instance NFData CSTypeClassDeclaration
 instance Binary CSTypeClassDeclaration
 
 data CSTypeDeclaration = CSTypeDeclaration Ident (Type ()) ToCSDB
   deriving (Show, Generic, Eq)
 
+instance NFData CSTypeDeclaration
 instance Binary CSTypeDeclaration
   -- |
   -- A type instance declaration (instance chain, chain index, name,
@@ -351,6 +361,7 @@ instance Binary CSTypeDeclaration
 data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration (ChainId, Integer) ToCSDB (Qualified (ProperName 'ClassName)) ToCSDB (CSTypeInstanceBody, ToCSDB)
   deriving (Show, Generic, Eq)
 
+instance NFData CSTypeInstanceDeclaration
 instance Binary CSTypeInstanceDeclaration
 
 data CSTypeInstanceBody
@@ -359,12 +370,14 @@ data CSTypeInstanceBody
   | CSExplicitInstance
   deriving (Show, Eq, Generic)
 
+instance NFData CSTypeInstanceBody
 instance Binary CSTypeInstanceBody
 
 data ToCSDB
   = ToCSDB (M.Map ModuleName ToCSDBInner)
   deriving (Show, Eq, Generic)
 
+instance NFData ToCSDB
 runToCSDB :: ToCSDB -> M.Map ModuleName ToCSDBInner
 runToCSDB (ToCSDB a) = a
 
@@ -389,10 +402,13 @@ data ToCSDBInner
     }
   deriving (Show, Eq, Generic)
 
+instance NFData ToCSDBInner
+
 -- NOTE[drathier]: some idents are run and re-packaged before we get here, so just matching a flat ident won't get you everything you need :( So we run the idents and wrap them up again
 newtype RunIdent = RunIdent T.Text
   deriving (Show, Eq, Ord, Generic)
 
+instance NFData RunIdent
 instance Binary RunIdent
 
 toRunIdent ident =
@@ -971,6 +987,7 @@ data DBOpaque
   deriving (Show, Eq, Generic)
 
 instance Binary DBOpaque
+instance NFData DBOpaque
 
 instance Semigroup DBOpaque where
   DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 <> DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 = DBOpaque (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12)
@@ -989,6 +1006,7 @@ cacheShapeHashFromByteString b =
 newtype CacheShapeHash = CacheShapeHash BS8.ByteString
   deriving (Show, Eq, Generic)
 
+instance NFData CacheShapeHash
 instance Binary CacheShapeHash
 
 dbIsctExports :: M.Map ModuleName DB -> ExportSummary -> DB -> DB
