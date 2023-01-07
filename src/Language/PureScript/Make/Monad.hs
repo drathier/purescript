@@ -53,7 +53,6 @@ import           System.IO.Error (tryIOError, isDoesNotExistError)
 import           System.IO.UTF8 (readUTF8FileT)
 import qualified Codec.Compression.GZip as GZip
 import           Control.DeepSeq (NFData, force)
-import Debug.Trace
 
 -- | A monad for running make actions
 newtype Make a = Make
@@ -126,13 +125,11 @@ readCborFile path =
 
 readCborFileIO :: NFData a => Binary a => FilePath -> IO (Maybe a)
 readCborFileIO path = do
-  let !_ = trace (show (path, "readCborFileIO")) ()
-  mbsl <- catchDoesNotExist $ GZip.decompress <$> BSL.readFile path
+  mbsl <- catchDoesNotExist $ GZip.decompress <$> BSL.fromStrict <$> B.readFile path
   case mbsl of
     Nothing -> pure Nothing
     Just bsl -> do
-      let !res = force $ fmap (\(_, _, r) -> r) <$> either (const Nothing) Just $ Binary.decodeOrFail bsl
-      pure res
+      pure $ fmap (\(_, _, r) -> r) <$> either (const Nothing) Just $ Binary.decodeOrFail bsl
   -- catchDoesNotExist $ fmap (\(_, _, r) -> r) <$> either (const Nothing) Just <$> Binary.decodeFileOrFail path
 
 
@@ -192,7 +189,6 @@ writeCborFile path value =
 
 writeCborFileIO :: Binary a => FilePath -> a -> IO ()
 writeCborFileIO path value = do
-  let !_ = trace (show (path, "writeCborFileIO")) ()
   createParentDirectory path
   let bsl = Binary.encode value
   let bslc = GZip.compressWith (GZip.defaultCompressParams { GZip.compressLevel = GZip.bestSpeed }) bsl
