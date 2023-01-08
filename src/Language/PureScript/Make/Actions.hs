@@ -115,6 +115,12 @@ data MakeActions m = MakeActions
   , readExterns :: ModuleName -> m (FilePath, Maybe ExternsFile)
   -- ^ Read the externs file for a module as a string and also return the actual
   -- path for the file.
+  , readAllExterns :: m (M.Map ModuleName ExternsFile)
+  -- ^ Read all the externs files for all modules as a string and also return the
+  -- actual path for each file.
+  , writeAllExterns :: M.Map ModuleName ExternsFile -> m ()
+  -- ^ Write all the externs files for all modules as a string and also return the
+  -- actual path for each file.
   , codegen :: CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT m ()
   -- ^ Run the code generator for the module and write any required output files.
   , ffiCodegen :: CF.Module CF.Ann -> m ()
@@ -177,7 +183,7 @@ buildMakeActions
   -- ^ Generate a prefix comment?
   -> MakeActions Make
 buildMakeActions outputDir filePathMap foreigns usePrefix =
-    MakeActions getInputTimestampsAndHashes getOutputTimestamp touchOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
+    MakeActions getInputTimestampsAndHashes getOutputTimestamp touchOutputTimestamp readExterns readAllExterns writeAllExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
   where
 
   getInputTimestampsAndHashes
@@ -258,8 +264,21 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
 
   readExterns :: ModuleName -> Make (FilePath, Maybe ExternsFile)
   readExterns mn = do
+    -- NOTE[drathier]: returned FilePath is never used anywhere, afaict
     let path = outputDir </> T.unpack (runModuleName mn) </> externsFileName
     (path, ) <$> readExternsFile path
+
+  readAllExterns :: Make (M.Map ModuleName ExternsFile)
+  readAllExterns = do
+    let path = outputDir </> externsFileName
+    -- TODO[drathier]: readCborFile readExternsFile
+    fromMaybe M.empty <$> readCborFile path
+
+  writeAllExterns :: M.Map ModuleName ExternsFile -> Make ()
+  writeAllExterns exts = do
+    let path = outputDir </> externsFileName
+    -- TODO[drathier]: readCborFile readExternsFile
+    writeCborFile path exts
 
   outputPrimDocs :: Make ()
   outputPrimDocs = do

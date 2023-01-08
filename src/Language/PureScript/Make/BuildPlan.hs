@@ -212,7 +212,7 @@ construct
   -> m (BuildPlan, CacheDb)
 construct MakeActions{..} cacheDb (sorted, graph) = do
   let sortedModuleNames = map (getModuleName . CST.resPartial) sorted
-  rebuildStatuses <- A.forConcurrently sortedModuleNames getRebuildStatus
+  rebuildStatuses <- A.forConcurrently sortedModuleNames getRebuildStatus -- all externs files are read in parallel here
   let prebuilt =
         foldl' collectPrebuiltModules M.empty $
           mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses

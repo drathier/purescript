@@ -7,7 +7,7 @@ import           Control.Monad
 import qualified Data.Aeson as A
 import           Data.Bool (bool)
 import qualified Data.ByteString.Lazy.UTF8 as LBU8
-import           Data.List (intercalate)
+import           Data.List (intercalate, foldl')
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -23,6 +23,10 @@ import           System.Directory (getCurrentDirectory)
 import           System.FilePath.Glob (glob)
 import           System.IO (hPutStr, hPutStrLn, stderr, stdout)
 import           System.IO.UTF8 (readUTF8FilesT)
+import qualified Language.PureScript.Externs as Externs
+import Debug.Trace
+import Data.Time.Clock (getCurrentTime)
+import System.IO.Unsafe (unsafePerformIO)
 
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
@@ -53,6 +57,7 @@ printWarningsAndErrors verbose True files warnings errors = do
 
 compile :: PSCMakeOptions -> IO ()
 compile PSCMakeOptions{..} = do
+  let !_ = trace (show (unsafePerformIO getCurrentTime, "preAll")) ()
   input <- globWarningOnMisses warnFileTypeNotFound pscmInput
   when (null input) $ do
     hPutStr stderr $ unlines [ "purs compile: No input files."
@@ -65,7 +70,21 @@ compile PSCMakeOptions{..} = do
     let filePathMap = M.fromList $ map (\(fp, pm) -> (P.getModuleName $ CST.resPartial pm, Right fp)) ms
     foreigns <- inferForeignModules filePathMap
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
-    P.make makeActions (map snd ms)
+
+
+    let !_ = trace (show (unsafePerformIO getCurrentTime, "preMake")) ()
+    newExtFiles <- P.make makeActions (map snd ms)
+
+    let !_ = trace (show (unsafePerformIO getCurrentTime, "preRead")) ()
+    allExtsBefore <- readAllExterns makeActions
+    let !_ = trace (show (unsafePerformIO getCurrentTime, "mid")) ()
+    let newExtMap = foldl' (\acc ext -> M.insert (Externs.efModuleName ext) ext acc) allExtsBefore newExtFiles
+    let !_ = trace (show (unsafePerformIO getCurrentTime, "folded")) ()
+
+    writeAllExterns makeActions newExtMap
+
+    trace (show (unsafePerformIO getCurrentTime, "post")) (pure ())
+
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors moduleFiles makeWarnings makeErrors
   exitSuccess
 
