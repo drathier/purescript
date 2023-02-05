@@ -59,6 +59,8 @@ import           System.FilePath ((</>), makeRelative, splitPath, normalise, spl
 import qualified System.FilePath.Posix as Posix
 import           System.IO (stderr)
 
+import Data.IORef as IORef
+
 -- | Determines when to rebuild a module
 data RebuildPolicy
   -- | Never rebuild this module
@@ -109,6 +111,9 @@ data MakeActions m = MakeActions
   -- externs file, or if any of the requested codegen targets were not produced
   -- the last time this module was compiled, this function must return Nothing;
   -- this indicates that the module will have to be recompiled.
+  , touchOutputTimestamp :: ModuleName -> m (Maybe ())
+  -- ^ Set the time this module was last compiled to the current time. Similar
+  -- to and used with getOutputTimestamp.
   , readExterns :: ModuleName -> m (FilePath, Maybe ExternsFile)
   -- ^ Read the externs file for a module as a string and also return the actual
   -- path for the file.
@@ -172,9 +177,11 @@ buildMakeActions
   -- ^ a map between module name and the file containing the foreign javascript for the module
   -> Bool
   -- ^ Generate a prefix comment?
+  -> Maybe ExternsMemCache
+  -- ^ Optional memcache of already parsed externs files, for repeated builds
   -> MakeActions Make
-buildMakeActions outputDir filePathMap foreigns usePrefix =
-    MakeActions getInputTimestampsAndHashes getOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
+buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
+    MakeActions getInputTimestampsAndHashes getOutputTimestamp touchOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
   where
 
   getInputTimestampsAndHashes
@@ -234,10 +241,29 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
                   then Just externsTimestamp
                   else Nothing
 
+  touchOutputTimestamp :: ModuleName -> Make (Maybe ())
+  touchOutputTimestamp mn = do
+    -- first check that all relevant files exist, by fetching the timestamp of the existing cache files
+    externsTimestamp <- getOutputTimestamp mn
+    -- then touch them all, to mark them as up-to-date. If this fails partway through, the next getOutputTimestamp will consider it incomplete.
+    codegenTargets <- asks optionsCodegenTargets
+    case externsTimestamp of
+      Nothing -> pure Nothing
+      Just _ -> do
+        -- then, after reading all relevant files succeeded, we update their mtimes
+        touchTimestampMaybe (outputFilename mn externsFileName)
+        case NEL.nonEmpty (fmap (targetFilename mn) (S.toList codegenTargets)) of
+          Nothing ->
+            pure (Just ())
+          Just outputPaths -> do
+            mmodTimes <- traverse touchTimestampMaybe outputPaths
+            pure $ sequence_ mmodTimes
+
+
   readExterns :: ModuleName -> Make (FilePath, Maybe ExternsFile)
   readExterns mn = do
     let path = outputDir </> T.unpack (runModuleName mn) </> externsFileName
-    (path, ) <$> readExternsFile path
+    (path, ) <$> readExternsFile mExternsMemCache path
 
   outputPrimDocs :: Make ()
   outputPrimDocs = do
@@ -248,7 +274,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   codegen :: CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT Make ()
   codegen m docs exts = do
     let mn = CF.moduleName m
-    lift $ writeCborFile (outputFilename mn externsFileName) exts
+    lift $ writeCborFile mExternsMemCache (outputFilename mn externsFileName) exts
     codegenTargets <- lift $ asks optionsCodegenTargets
     when (S.member CoreFn codegenTargets) $ do
       let coreFnFile = targetFilename mn CoreFn
@@ -293,7 +319,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
       map (\(SMap _ orig gen) -> Mapping {
           mapOriginal = Just $ convertPos $ add 0 (-1) orig
         , mapSourceFile = sourceFile
-        , mapGenerated = convertPos $ add (extraLines+1) 0 gen
+        , mapGenerated = convertPos $ add (extraLines + 1) 0 gen
         , mapName = Nothing
         }) mappings
     }
@@ -301,7 +327,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
     writeJSONFile mapFile mapping
     where
     add :: Int -> Int -> SourcePos -> SourcePos
-    add n m (SourcePos n' m') = SourcePos (n+n') (m+m')
+    add n m (SourcePos n' m') = SourcePos (n + n') (m + m')
 
     convertPos :: SourcePos -> Pos
     convertPos SourcePos { sourcePosLine = l, sourcePosColumn = c } =
@@ -314,7 +340,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   requiresForeign = not . null . CF.moduleForeign
 
   progress :: ProgressMessage -> Make ()
-  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling "
+  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling V16 "
 
   readCacheDb :: Make CacheDb
   readCacheDb = readCacheDb' outputDir
