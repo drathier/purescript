@@ -762,7 +762,58 @@ moduleToExternsFile externsMap (Module ss _ mn ds (Just exps)) env renamedIdents
 externsFileName :: FilePath
 externsFileName = "externs.cbor"
 
-data CacheShape
+
+-- #A Building the CacheShape of a module
+-- 1. For each exported thing, store its CacheShape and CacheKey in the externs file.
+-- 2. Re-exported things: look up and copy the CacheShape of the re-exported thing from its original module's externs file.
+-- 3. For each imported module, copy all CacheShapes from it into our externs file
+
+-- #B Finding out if we need to recompile, version 1
+-- 1. For each imported module; did its CacheShape change compared to what we copied in last time?
+
+-- #C Finding out if we need to recompile, version 2
+-- 1. For each imported module, copy only the imported CacheShapes from it into our externs file
+
+-- #D Finding out if we need to recompile, version 3
+-- 1. If we start depending on a new thing, consider it a cache hit, since we couldn't have depended on its shape before
+
+-- #E Finding out if we need to recompile, version 4
+-- 1. Store CacheKeys and CacheShapes as bytestrings to speed up encoding/decoding
+
+-- #F Finding out what each thing depends on
+-- 1. walk types and store found things as a CacheShape in a State monad
+-- 2. build a
+
+-- Q: how do we build the CacheShape from looking at the types of a thing? Let's say we have a function that contains data types which transitively etc refer to 3 different things. How do we grab all those things and store them? Do we collect CacheKeys only, and each thing contains a set of CacheKeys?
+-- A: I don't see how it could be anything other than a set of CacheKeys per item. I.e. {things :: Map CacheKey (ModuleName, CacheKey)}.
+-- **Then we'll have a separate store for a copy of the CacheShape of each (ModuleName, CacheKey) pair.**
+
+-- #G Finding the transitive dependencies of a function declaration.
+-- 1. Look at all the transitively referenced types. Gather up their (ModuleName, CacheKey) pairs.
+-- 2. Store any extra info about the cached thing, like its name, constructors, etc. along side the `Set (ModuleName, CacheKey)` dependency keys.
+-- 3. After building this for all things in a module, deduplicate them, and go gather the CacheShape of each thing and store it
+-- 4. We now know both what each thing depends on, and what it looked like last time, and what it looks like now. We should be able to tell you why something was rebuilt. It should be space optimal. The CacheShape could be a hash; we only care about it being EQ or not.
+
+-- ########### TODO start here:
+asdf
+-- # Plan:
+-- 1. start at #G, with just finding all directly referenced types of decls, as a Map ModuleName CacheKey
+-- 2. find the transitive (ModuleName, CacheKey) references for each directly referenced dependency, full transitive set
+-- 3. store info about what this thing is, other than what types/things it references, so we can detect e.g. a data -> newtype change
+-- 4. CacheShapes are in practice then a pair of (WhatKindOfThingIsThisAndWhatAreItsParameters, Map ModuleName CacheKey)
+-- 5. store it? maybe? idk?
+
+
+type ExternsA =
+  { imports :: Map ModuleName (Map CacheKey CacheShape)
+  , exportShapes :: Map CacheKey CacheShape
+  , exports :: Map CacheKey (WhatKindOfThingIsThisAndWhatAreItsParameters, Set (ModuleName, CacheKey))
+  }
+
+type CacheShape = (WhatKindOfThingIsThisAndWhatAreItsParameters, Set (ModuleName, CacheKey))
+
+-- ASSUMPTION[drathier]: this data type is opaque and only has an Eq and Ord instance. This is so that we can store it as an opaque bytestring or hash later on.
+data WhatKindOfThingIsThisAndWhatAreItsParameters
   = PrimType ModuleName (ProperName 'TypeName)
   | TypeClassDictType ModuleName (ProperName 'TypeName)
   | OwnModuleRef ModuleName (ProperName 'TypeName)
